@@ -23,24 +23,27 @@ var process_images = require('users/nawa_shrestha/MVP_MODIS:MODIS.js');
 var processed = process_images.processMODIS()
 // print(processed)
 
-// //Calculating water occurrence with slope masked
+// //Calculating mesic vegetation frequency
 var min_occurence = 5;
 var water_sums = processed.select('mesics_MVsdi').reduce(ee.Reducer.sum());
 var water_frequencys = water_sums.divide(processed.select('mesics_MVsdi').size()).multiply(100);
 var water_frequency_maskeds = water_frequencys.updateMask(water_frequencys.gt(min_occurence))
 
 
-//Sandhills POlygon//
+//Load Sandhills POlygon//
 
 var sandHills = ee.FeatureCollection("projects/eepractice/assets/Sandhills_polygon")
 
-var sandhillsLayer = ui.Map.Layer(ee.Image().paint(sandHills, 0, 1)).setName('Sandhills');   
+var sandhillsLayer = ui.Map.Layer(ee.Image().paint(sandHills, 0, 1)).setName('Sandhills');  
+
 // // reproject modis//
 var reprojected = water_frequency_maskeds.reproject('EPSG:4326', null, 500).clip(sandHills);
 
 
 // Load National Hydrography Dataset (NHD)
 var HUC08 = ee.FeatureCollection('USGS/WBD/2017/HUC12').filterBounds(sandHills);  // 18,487 HUC10 watersheds in the U.S.
+
+//Color palette
 
 function ColorBar(palette) {
   return ui.Thumbnail({
@@ -90,9 +93,8 @@ var LEGEND_FOOTNOTE_STYLE = {
 
 var chartPanel = ui.Panel({style: {height: '250px', 
                                    width: '600px', position: 'bottom-right', shown: false}});
-// Configure our map with a minimal set of controls.
-// Map.setControlVisibility(false);
-// Map.setControlVisibility({scaleControl: true, zoomControl: true});
+//Load maps
+
 Map.style().set({cursor: 'crosshair'});
 Map.centerObject(sandHills, 8);
 
