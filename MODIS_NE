@@ -17,6 +17,8 @@ var table = ee.FeatureCollection("projects/eepractice/assets/Sandhills_polygon")
 //Load Mesic vegetation persistence assesst of Sandhills 
 var mvpMODIS = ee.Image('projects/mesicvegetation/assets/mvpModis_sandhills')
 
+//Load script to process MODIS images, processes images from 2000-2024 using Aqua and terra satellites
+
 var process_images = require('users/nawa_shrestha/MVP_MODIS:MODIS.js'); 
 var processed = process_images.processMODIS()
 // print(processed)
