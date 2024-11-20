@@ -14,212 +14,31 @@ var table = ee.FeatureCollection("projects/eepractice/assets/Sandhills_polygon")
           [-97.84044363533413, 40.83378049992563],
           [-97.84044363533413, 43.07612858834496]]], null, false);
 /***** End of imports. If edited, may not auto-convert in the playground. *****/
-Map.addLayer(table)
+//Load Mesic vegetation persistence assesst of Sandhills 
+var mvpMODIS = ee.Image('projects/mesicvegetation/assets/mvpModis_sandhills')
 
-/**
- * Utility to extract bitmask values. 
- * Look up the bit-ranges in the catalog.
- * 
- * value - ee.Number of ee.Image to extract from.
- * fromBit - int or ee.Number with the first bit.
- * toBit - int or ee.Number with the last bit (inclusive). 
- *         Defaults to fromBit.
- */
-function bitwiseExtract(value, fromBit, toBit) {
-  if (toBit === undefined) toBit = fromBit
-  var maskSize = ee.Number(1).add(toBit).subtract(fromBit)
-  var mask = ee.Number(1).leftShift(maskSize).subtract(1)
-  return value.rightShift(fromBit).bitwiseAnd(mask)
-}
-
-var maskSnowAndClouds = function(image) {
-  var summaryQa = image.select('StateQA')
-  // Select pixels which are less than or equals to 1 (0 or 1)
-  var cloudState = bitwiseExtract(summaryQa, 0, 1) 
-  var cloudShadowState = bitwiseExtract(summaryQa, 2)
-  var cirrusState = bitwiseExtract(summaryQa, 8, 9)
-  var mask = cloudState.eq(0) // Clear
-  .and(cloudShadowState.eq(0)) // No cloud shadow
-  .and(cirrusState.eq(0)) // No cirrus
-  var maskedImage = image.updateMask(mask).multiply(0.0001)
-  return maskedImage.copyProperties(image, ['system:index', 'system:time_start'])
-}
-
-// /* 
-// Create arid and semi-arid mask using global ai dataset  
-// */
-
-function maskArid (image){
-  var aridity_index = ee.Image('projects/sat-io/open-datasets/global_ai/global_ai_yearly')
-  var maskArid = aridity_index.expression(
-          '((aridity > 0.03 ) && aridity <0.5) ? 1' +
-          ': 0',
-          {
-            'aridity': aridity_index.select('b1').multiply(0.0001)
-            
-          }).selfMask()
-  // var msk=maskArid.eq(1)
-  return image.updateMask(maskArid)
-
-}
-
-/* 
-MODIS9A1 500m 8 day images
-*////Surface Reflectance 8-Day L3 Global 500m Terra 
-
-var MYD09A1 = ee.ImageCollection('MODIS/061/MYD09A1')
-                  // .filterBounds(poi)
-                  .filter(ee.Filter.calendarRange(5,10,'month'))
-                  // Pre-filter to get less cloudy granules.
-                  // .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',20))
-                  .filter(ee.Filter.date('2000-01-01', '2024-12-01'))
-                  .map(maskArid)
-                  .map(maskSnowAndClouds);
-// print(dataset)
-////Surface Reflectance 8-Day L3 Global 500m Aqua 
-var MOD09A1 = ee.ImageCollection('MODIS/061/MOD09A1')
-                  // .filterBounds(poi)
-                  .filter(ee.Filter.calendarRange(5,10,'month'))
-                  // Pre-filter to get less cloudy granules.
-                  // .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',20))
-                  .filter(ee.Filter.date('2000-01-01', '2024-12-01'))
-                  .map(maskArid)
-                  .map(maskSnowAndClouds);
-///// merge terra and aqua
-
-var dataset = MYD09A1.merge(MOD09A1)
-
-/// Visualize
-var trueColor =
-    dataset.select(['sur_refl_b01', 'sur_refl_b04', 'sur_refl_b03']);
-var trueColorVis = {
-  min: 0.02,
-  max: 0.5,
-};
-
-Map.addLayer(trueColor, trueColorVis, 'True Color');
-
-/* 
-Calculate indices 
-*/
-var calc_indices = function(image){
-    var date = ee.Date(image.get('system:time_start'));
-    // var date = image.date();
-    var years = date.difference(ee.Date('1970-01-01'), 'year');
-
-    var MCARI2 = image.expression(
-      '(1.5 * (2.5 * (N - R) - 1.3 * (N - G))) / ((((2.0 * N + 1) ** 2) - (6.0 * N - 5 * (R ** 0.5)) - 0.5) ** 0.5)',
-      {
-      'N': image.select('sur_refl_b02'),
-      'R': image.select('sur_refl_b01'),
-      'G': image.select('sur_refl_b04')
-    }).rename('MCARI2');//Modified Chlorophyll Absorption in Reflectance Index 2
-    
-    var VSDI = image.expression(
-      '1-(((SWIR2)-Blue) + (Red -Blue))',
-      // '1-((NIR-SWIR) + (NIR-Red))',
-      {
-       'SWIR': image.select('sur_refl_b06'), 
-       'Blue': image.select('sur_refl_b03'), 
-       'Red': image.select('sur_refl_b01'), 
-       'NIR': image.select('sur_refl_b02'), 
-       'SWIR2': image.select('sur_refl_b07'), 
-       }).rename('VSDI')
-
-  return image
-    .addBands(ee.Image.constant(1))
-    .addBands(ee.Image(years).rename('t')).float()
-    .addBands(ee.Image(MCARI2))
-    .addBands(ee.Image(VSDI))
-
-};
-
-var modisColl = dataset.map(calc_indices)
-// print(modisColl, 'modisColl')
-
-// /* Use the model to "detrend" the original NDVI time series:
-// Compute a de-trended series.*/
-var detrended = modisColl.map(function(image) {
-  var independents = ee.List(['constant', 't']);
-  var dependent = ee.String('VSDI');
-  var trend = modisColl.select(independents.add(dependent))
-    .reduce(ee.Reducer.linearRegression(independents.length(), 1));
-  var coefficients = trend.select('coefficients')
-    .arrayProject([0])
-    .arrayFlatten([independents]);
-  // var detrended = image.select(dependent).subtract(image.select(independents)
-  //                 .multiply(coefficients).reduce('sum')).rename('detrended')
-  // return image 
-  //     ee.Image(image.addBands(detrended))
-  //     .copyProperties(image, ['system:time_start']);
-  
-  return ee.Image(image.addBands(image.select(dependent).subtract(
-          image.select(independents).multiply(coefficients).reduce('sum'))
-          .rename(dependent)))
-          .copyProperties(image, ['system:time_start']);
-});
-
-print(detrended, 'detrended')
-
-/* 
-Calculate changes in moisture using percentiles   
-*/
-
-function calc_moist_vsdi (collection){
-  var per5 = collection.reduce(ee.Reducer.percentile([5]));
-  var per95 = collection.reduce(ee.Reducer.percentile([95]));
-  return collection.map(function(img){
-    var moist_VSDI = img.expression(
-      '(VSDI - VSDI_p5) /(VSDI_p95-VSDI_p5)', 
-      {
-          'VSDI': img.select('VSDI_1'),
-          'VSDI_p5': per5.select('VSDI_1_p5'),
-          'VSDI_p95': per95.select('VSDI_1_p95'),
-        }).rename('moist_VSDI')
-        return img
-        .addBands(ee.Image(moist_VSDI))
-  });
-  
-}
-var modisCollDetrend =  calc_moist_vsdi(detrended)
-
-print(modisCollDetrend, 'modisCollDetrend')
-
-/* 
-Classify/threshold based on relative moisture and MCARI2
-*/
-
-function classify (image) {
-  var mesics_MVsdi = image.expression(
-          '((MCARI2 > 0.2 ) && (moist_VSDI > 0.3)) ? 1' +
-          ': 0',
-          
-        {
-          'moist_VSDI': image.select('moist_VSDI'),
-          'MCARI2': image.select('MCARI2'),
-          
-        }).rename('mesics_MVsdi')
-
-
-  return image
-    .addBands(ee.Image(mesics_MVsdi))
-}
- 
-
-var Classify = modisCollDetrend.map(classify)
-
+var process_images = require('users/nawa_shrestha/MVP_MODIS:MODIS.js'); 
+var processed = process_images.processMODIS()
+// print(processed)
 
 // //Calculating water occurrence with slope masked
 var min_occurence = 5;
-var water_sums = Classify.select('mesics_MVsdi').reduce(ee.Reducer.sum());
-var water_frequencys = water_sums.divide(Classify.select('mesics_MVsdi').size()).multiply(100);
+var water_sums = processed.select('mesics_MVsdi').reduce(ee.Reducer.sum());
+var water_frequencys = water_sums.divide(processed.select('mesics_MVsdi').size()).multiply(100);
 var water_frequency_maskeds = water_frequencys.updateMask(water_frequencys.gt(min_occurence))
 
+
+//Sandhills POlygon//
+
+var sandHills = ee.FeatureCollection("projects/eepractice/assets/Sandhills_polygon")
+
+var sandhillsLayer = ui.Map.Layer(ee.Image().paint(sandHills, 0, 1)).setName('Sandhills');   
 // // reproject modis//
-var reprojected = water_frequency_maskeds
-    // .unitScale(-2000, 10000)
-    .reproject('EPSG:4326', null, 500);
-    
+var reprojected = water_frequency_maskeds.reproject('EPSG:4326', null, 500).clip(sandHills);
+
+
+// Load National Hydrography Dataset (NHD)
+var HUC08 = ee.FeatureCollection('USGS/WBD/2017/HUC12').filterBounds(sandHills);  // 18,487 HUC10 watersheds in the U.S.
 
 function ColorBar(palette) {
   return ui.Thumbnail({
@@ -235,8 +54,9 @@ function ColorBar(palette) {
     style: {stretch: 'horizontal', margin: '0px 22px'},
   });
 }
+
 function makeLegend(lowLine, midLine, highLine,lowText, midText, highText, palette) {
-  var  labelheader = ui.Label('Mesic Vegetation Persistence',{margin: '5px 17px', textAlign: 'center', stretch: 'horizontal', fontWeight: 'bold'});
+  var  labelheader = ui.Label('Wetland Persistence',{margin: '5px 17px', textAlign: 'center', stretch: 'horizontal', fontWeight: 'bold'});
   var labelLines = ui.Panel(
       [
         ui.Label(lowLine, {margin: '-4px 21px'}),
@@ -255,22 +75,139 @@ function makeLegend(lowLine, midLine, highLine,lowText, midText, highText, palet
       widgets: [labelheader, ColorBar(palette), labelLines, labelPanel], 
       style: {position:'bottom-left'}});
 }
-Map.add(makeLegend('|', '|', '|', "0 %", '50 %', '100%', ['orange','yellow','lightblue','darkblue']));
 
-Map.addLayer(water_frequency_maskeds,{min:min_occurence,max:100,palette:['orange','yellow','lightblue','darkblue']},'MVP sinusoidal');
+// Styling for the legend footnotes.
+var LEGEND_FOOTNOTE_STYLE = {
+  fontSize: '16px',
+  stretch: 'horizontal',
+  textAlign: 'left',
+  fontWeight: 'bold',
+  margin: '4px',
+};
+///Chart Panel
 
-Map.addLayer(reprojected,{min:min_occurence,max:100,palette:['orange','yellow','lightblue','darkblue']},'MVP reprojected');
+var chartPanel = ui.Panel({style: {height: '250px', 
+                                   width: '600px', position: 'bottom-right', shown: false}});
+// Configure our map with a minimal set of controls.
+// Map.setControlVisibility(false);
+// Map.setControlVisibility({scaleControl: true, zoomControl: true});
+Map.style().set({cursor: 'crosshair'});
+Map.centerObject(sandHills, 8);
 
-// Reduces images in an ImageCollection by regions defined in a
+
+Map.addLayer(mvpMODIS,{min:min_occurence,max:100, 
+              palette:['E86C43','FCAC6B','FDC87E','FEE592','CCEBC4', 'A8DEB5','7ACCC4','4FB2D4']},'Wetland Persistence');
+
+Map.addLayer(ee.Image().paint(sandHills, 0, 1),{opacity: 0.5}).setName('Sandhills');
+
+Map.addLayer(ee.Image().paint(HUC08, 0, 1), {opacity: 0.7}).setName('HUC-12 Watershed');   // HUC10 for the entire U.S.
 
 
-// If the export has more than 1e8 pixels, set "maxPixels" higher.
-Export.image.toDrive({
-  image: reprojected,
-  description: 'modis_mvp_weatern_ne',
-  folder: 'MODISMVPNE',
-  region: table,
-  scale: 500,
-  crs: 'EPSG:4326',
-  maxPixels: 1e13
-});
+// var controlPanel = ui.Panel()
+
+// // Define an app info widget group.
+// titleLabel = ui.Label('Wetlands of Nebraska Sandhills', 
+//                               {fontWeight: 'bold', fontSize: '18px', margin: '0 0 4px 0', padding:'0'});
+// aboutLabel = ui.Label(
+//   'There are approximately 3.7 million acres of wetlands in the Nebraska Sandhills, which comprise the largest dune field in the Western Hemisphere (LaGrange et al. 2005).'+
+//   'Sandhills wetlands range in size from less than one acre to 2300 acres.'+
+//   'The wetlands are vulnerable to extensive change in land use by drainage and climate effect'
+  
+//   // ' The dropdown menu [activates after running application] at the center of map ' + 
+//   // ' provides list of avialable NAIP images.'
+//   );
+// info.panel = ui.Panel([titleLabel, aboutLabel]);
+// controlPanel.add(info.panel);
+Map.add(makeLegend('|', '|', '|', "0 %", '50 %', '100%', 
+                    ['E86C43','FCAC6B','FDC87E','FEE592','CCEBC4', 'A8DEB5','7ACCC4','4FB2D4']),
+                    {width: '230px', position: 'bottom-left'})
+// Create the application title bar.
+Map.add(ui.Panel([
+  ui.Label('Wetlands in Nebraska Sandhills', 
+          {fontWeight: 'bold', textAlign: 'center', stretch: 'horizontal', fontSize: '18px'}),
+  // ui.Label(
+  //   'Click on watershed to plot graph', LEGEND_FOOTNOTE_STYLE)
+  
+  ui.Label('There are approximately 3.7 million acres of wetlands in the Nebraska Sandhills, '+
+  'which comprise the largest dune field in the Western Hemisphere (LaGrange et al. 2005).'+
+  ' Sandhills wetlands range in size from less than one acre to 2300 acres.'+
+  'The wetlands are vulnerable to extensive change in land use by drainage and climate effect.',
+          {fontWeight: 'regular', textAlign: 'left', stretch: 'horizontal', fontSize: '14px'}),
+          
+  ui.Label('Satellite assessment of wetlands',{fontWeight: 'bold'}),
+  
+  ui.Label('Wetlands respond to climate and management effects and are dynamic. '+ 
+          'Satellite observation is a particularly efficient, detailed, and repeatable '+ 
+          'means for assessing meaningful way to measure the dynamic wetlands​', 
+           {fontWeight: 'regular', textAlign: 'left', stretch: 'horizontal', fontSize: '14px'}),
+  ui.Label('We use MODIS images with 500m spatial resolution between 2000-2024 to assess dynamics '+
+            'of wetland in the Nebraska Sandhills', 
+            {fontWeight: 'regular', textAlign: 'left', stretch: 'horizontal', fontSize: '14px'}),
+  ui.Label(
+           'Click on HUC-12 watershed to view the time-series plot', LEGEND_FOOTNOTE_STYLE),
+  ui.Label('For more infromation contact:',{fontWeight: 'bold'}),
+  ui.Label(' Nawaraj Shrestha: nshrestha3@unl.edu',{fontWeight: 'bold'} ),
+  ui.Label('R. M. Jockel: rjoeckel3@unl.edu',{fontWeight: 'bold'} )
+           ],
+  ui.Panel.Layout.flow('vertical'),
+    {width: '360px', position: 'bottom-left'}))
+  
+  // ui.Label('Sandhills Wetland Persistence Explorer', {fontWeight: 'bold', fontSize: '24px'}),
+  //                 ui.Label('(Click on watershed to plot graph)', LEGEND_FOOTNOTE_STYLE)
+  //                 );
+
+
+
+Map.add(chartPanel)
+
+
+
+
+// Generates a new time series chart of SST for the given coordinates.
+var generateChart = function(coords) {
+  if (!chartPanel.style().get('shown')) {
+    chartPanel.style().set('shown', true);
+  }
+  var i_lyr = 1;
+  // get clicked subbasin info
+  var clicked_point      = ee.Geometry.Point(coords.lon, coords.lat);
+  var clicked_basin_fc   = HUC08.filterBounds(clicked_point);
+  var clicked_basin      = ee.Feature(clicked_basin_fc.first());
+  var clicked_basin_geom = clicked_basin.geometry();
+  var clicked_basin_id   = clicked_basin.get('huc10');
+  var huc_id;
+
+  ////Calcualte mesic area in the selected HUC basin               
+  var mesic_areas = processed.map(function(i) {
+    var mesic = ee.Image(1).mask(i.select('mesics_MVsdi'));
+    var mesicsArea =mesic.multiply(ee.Image.pixelArea())
+                    .reduceRegion(ee.Reducer.sum(), clicked_basin_geom,500,null,null,false,1e13)
+                    .get('constant');
+    var geomArea = ee.Image(1).multiply(ee.Image.pixelArea()) 
+                      .reduceRegion(ee.Reducer.sum(), clicked_basin_geom,500,null,null,false,1e13)
+                      .get('constant');
+    var areaVSDI = ee.Number(mesicsArea).divide(ee.Number(geomArea));
+    var date = ee.Date(i.get('system:time_start')).format('YYYY-MM-dd');
+    
+      return i.set({'MesicArea': areaVSDI.multiply(100), 'date': date})
+    
+  });
+  
+  var chartArea = ui.Chart.feature.byFeature(mesic_areas, 'system:time_start', 'MesicArea')
+                        .setOptions({
+                          title: 'Percent Mesic vegetation area',
+                          hAxis: {title: 'Date'},
+                          series: {0: {color: '#2c7bb6', labelInLegend: 'Mesic Area'}, dataOpacity: 0.1},
+                          vAxis: {title: 'Mesic Area (%)'},
+                          // trendlines: {0: {color: '07a521'}},
+                          lineWidth: 0, 
+                          pointsVisible: true, 
+                          pointSize: 1.5,
+                          trendlines: { 0: {color: '07a521', labelInLegend: 'trend line', 
+                                  visibleInLegend: true},  dataOpacity: 0.5}});
+  chartPanel.widgets().set(0, chartArea)
+}
+// Register a callback on the default map to be invoked when the map is clicked.
+Map.onClick(generateChart);
+
+
