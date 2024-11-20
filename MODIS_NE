@@ -106,31 +106,15 @@ Map.addLayer(ee.Image().paint(sandHills, 0, 1),{opacity: 0.5}).setName('Sandhill
 
 Map.addLayer(ee.Image().paint(HUC08, 0, 1), {opacity: 0.7}).setName('HUC-12 Watershed');   // HUC10 for the entire U.S.
 
+//Add legend to control panel\
 
-// var controlPanel = ui.Panel()
-
-// // Define an app info widget group.
-// titleLabel = ui.Label('Wetlands of Nebraska Sandhills', 
-//                               {fontWeight: 'bold', fontSize: '18px', margin: '0 0 4px 0', padding:'0'});
-// aboutLabel = ui.Label(
-//   'There are approximately 3.7 million acres of wetlands in the Nebraska Sandhills, which comprise the largest dune field in the Western Hemisphere (LaGrange et al. 2005).'+
-//   'Sandhills wetlands range in size from less than one acre to 2300 acres.'+
-//   'The wetlands are vulnerable to extensive change in land use by drainage and climate effect'
-  
-//   // ' The dropdown menu [activates after running application] at the center of map ' + 
-//   // ' provides list of avialable NAIP images.'
-//   );
-// info.panel = ui.Panel([titleLabel, aboutLabel]);
-// controlPanel.add(info.panel);
 Map.add(makeLegend('|', '|', '|', "0 %", '50 %', '100%', 
                     ['E86C43','FCAC6B','FDC87E','FEE592','CCEBC4', 'A8DEB5','7ACCC4','4FB2D4']),
                     {width: '230px', position: 'bottom-left'})
-// Create the application title bar.
+// Create the application title bar and description on floating panel.
 Map.add(ui.Panel([
   ui.Label('Wetlands in Nebraska Sandhills', 
           {fontWeight: 'bold', textAlign: 'center', stretch: 'horizontal', fontSize: '18px'}),
-  // ui.Label(
-  //   'Click on watershed to plot graph', LEGEND_FOOTNOTE_STYLE)
   
   ui.Label('There are approximately 3.7 million acres of wetlands in the Nebraska Sandhills, '+
   'which comprise the largest dune field in the Western Hemisphere (LaGrange et al. 2005).'+
