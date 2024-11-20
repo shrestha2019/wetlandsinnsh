@@ -139,19 +139,12 @@ Map.add(ui.Panel([
            ],
   ui.Panel.Layout.flow('vertical'),
     {width: '360px', position: 'bottom-left'}))
-  
-  // ui.Label('Sandhills Wetland Persistence Explorer', {fontWeight: 'bold', fontSize: '24px'}),
-  //                 ui.Label('(Click on watershed to plot graph)', LEGEND_FOOTNOTE_STYLE)
-  //                 );
 
-
-
+//Add chart panel to map
 Map.add(chartPanel)
 
 
-
-
-// Generates a new time series chart of SST for the given coordinates.
+// Generates a new time series chart of wetland for the given HUC.
 var generateChart = function(coords) {
   if (!chartPanel.style().get('shown')) {
     chartPanel.style().set('shown', true);
@@ -165,7 +158,7 @@ var generateChart = function(coords) {
   var clicked_basin_id   = clicked_basin.get('huc10');
   var huc_id;
 
-  ////Calcualte mesic area in the selected HUC basin               
+  ////Calcualtes mesic area in the selected HUC basin               
   var mesic_areas = processed.map(function(i) {
     var mesic = ee.Image(1).mask(i.select('mesics_MVsdi'));
     var mesicsArea =mesic.multiply(ee.Image.pixelArea())
