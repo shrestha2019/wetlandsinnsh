@@ -157,6 +157,8 @@ var generateChart = function(coords) {
   var clicked_basin      = ee.Feature(clicked_basin_fc.first());
   var clicked_basin_geom = clicked_basin.geometry();
   var clicked_basin_id   = clicked_basin.get('huc10');
+  var dot = ui.Map.Layer(clicked_basin_geom, {color: '000000'}, 'clicked location');
+  ui.Map.layers().set(1, dot);
   var huc_id;
 
   ////Calcualtes mesic area in the selected HUC basin               
