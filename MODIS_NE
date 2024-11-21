@@ -135,7 +135,8 @@ Map.add(ui.Panel([
            'Click on HUC-12 watershed to view the time-series plot', LEGEND_FOOTNOTE_STYLE),
   ui.Label('For more infromation contact:',{fontWeight: 'bold'}),
   ui.Label(' Nawaraj Shrestha: nshrestha3@unl.edu',{fontWeight: 'bold'} ),
-  ui.Label('R. M. Jockel: rjoeckel3@unl.edu',{fontWeight: 'bold'} )
+  ui.Label('R. M. Jockel: rjoeckel3@unl.edu',{fontWeight: 'bold'} ),
+  ui.Label('Troy E. Gilmore: gilmore@unl.edu',{fontWeight: 'bold'} )
            ],
   ui.Panel.Layout.flow('vertical'),
     {width: '360px', position: 'bottom-left'}))
